@@ -459,6 +459,8 @@ impl BestResponse {
     ) -> BestResponse {
         let mut p1_unnormalized_value = HashMap::<InfoState, f64>::new();
         let mut p2_unnormalized_value = HashMap::<InfoState, f64>::new();
+        let mut p1_normalizing_sum = HashMap::<InfoState, f64>::new();
+        let mut p2_normalizing_sum = HashMap::<InfoState, f64>::new();
         for (i, state) in tree.states.iter().enumerate().rev() {
             for p1goal in Outcome::iter() {
                 for p2goal in Outcome::iter() {
@@ -476,6 +478,11 @@ impl BestResponse {
                         Player::Player1 => (&mut p1_unnormalized_value, &mut p2_unnormalized_value),
                         Player::Player2 => (&mut p2_unnormalized_value, &mut p1_unnormalized_value),
                     };
+                    let (active_normalizing_sum, passive_normalizing_sum) =
+                        match state.current_player() {
+                            Player::Player1 => (&mut p1_normalizing_sum, &mut p2_normalizing_sum),
+                            Player::Player2 => (&mut p2_normalizing_sum, &mut p1_normalizing_sum),
+                        };
                     let (active_goal, passive_goal) = match state.current_player() {
                         Player::Player1 => (p1goal, p2goal),
                         Player::Player2 => (p2goal, p1goal),
@@ -488,10 +495,13 @@ impl BestResponse {
                         active_player_value = tree.children[&metastate.state]
                             .iter()
                             .map(|c| {
-                                active_unnormalized_values[&InfoState {
+                                let infostate = InfoState {
                                     state: *c,
                                     goal: active_goal,
-                                }]
+                                };
+                                let denom = active_normalizing_sum[&infostate];
+                                active_unnormalized_values[&infostate]
+                                    / if denom == 0.0 { 1.0 } else { denom }
                             })
                             .reduce(if state.current_player() == Player::Player1 {
                                 f64::max
@@ -504,23 +514,41 @@ impl BestResponse {
                             tree.children[&metastate.state].iter(),
                         )
                         .map(|(p, c)| {
-                            p * passive_unnormalized_values[&InfoState {
+                            let infostate = InfoState {
                                 state: *c,
                                 goal: passive_goal,
-                            }]
+                            };
+                            let denom = passive_normalizing_sum[&infostate];
+                            p * passive_unnormalized_values[&infostate]
+                                / if denom == 0.0 { 1.0 } else { denom }
                         })
                         .sum();
                     };
                     *active_unnormalized_values
                         .entry(metastate.info_state(tree))
                         .or_insert(0.0) += counterfactual_probs[&metastate] * active_player_value;
-                    *passive_unnormalized_values
+                    *active_normalizing_sum
                         .entry(metastate.info_state(tree))
+                        .or_insert(0.0) += counterfactual_probs[&metastate];
+                    *passive_unnormalized_values
+                        .entry(InfoState {
+                            state: metastate.state,
+                            goal: passive_goal,
+                        })
                         .or_insert(0.0) += metastate
                         .parent(tree)
                         .map(|p| counterfactual_probs[&p])
                         .unwrap_or(1.0 / 9.0)
                         * passive_player_value;
+                    *passive_normalizing_sum
+                        .entry(InfoState {
+                            state: metastate.state,
+                            goal: passive_goal,
+                        })
+                        .or_insert(0.0) += metastate
+                        .parent(tree)
+                        .map(|p| counterfactual_probs[&p])
+                        .unwrap_or(1.0 / 9.0)
                 }
             }
         }
@@ -530,6 +558,8 @@ impl BestResponse {
         for (i, state) in tree.states.iter().enumerate().rev() {
             for goal in Outcome::iter() {
                 let infostate = InfoState { state: i, goal };
+                *p1_unnormalized_value.get_mut(&infostate).unwrap() /= p1_normalizing_sum[&infostate];
+                *p2_unnormalized_value.get_mut(&infostate).unwrap() /= p2_normalizing_sum[&infostate];
 
                 let mut best_value = None;
                 let mut best_index = None;

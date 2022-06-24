@@ -18,14 +18,18 @@ struct Cli {
     solutions_dir: std::path::PathBuf,
 }
 
-fn best_response(args:&mut Cli, i:usize) -> BestResponse {
-    let mut result = BestResponse {p1_value: HashMap::new(), p2_value: HashMap::new(), strategy: Strategy { probs: HashMap::new()}};
-    args.solutions_dir.push(format!("best_response_{}.bincode", i));
+fn best_response(args: &mut Cli, i: usize) -> BestResponse {
+    let mut result = BestResponse {
+        p1_value: HashMap::new(),
+        p2_value: HashMap::new(),
+        strategy: Strategy {
+            probs: HashMap::new(),
+        },
+    };
+    args.solutions_dir
+        .push(format!("best_response_{}.bincode", i));
     if let Ok(f) = File::open(&args.solutions_dir) {
-        result= bincode::deserialize_from(BufReader::new(
-            f
-        ))
-        .unwrap();   
+        result = bincode::deserialize_from(BufReader::new(f)).unwrap();
     }
     args.solutions_dir.pop();
     return result;
@@ -46,14 +50,15 @@ fn load_iteration(args: &mut Cli, i: usize) -> (CFR, Strategy, BestResponse) {
     return (cfr, strategy, best_response(args, i));
 }
 
-fn char_to_outcome(c:char) -> Option<Outcome> {
+fn char_to_outcome(c: char) -> Option<Outcome> {
     match c {
         'w' => Some(Outcome::Win),
         't' => Some(Outcome::Tie),
         'l' => Some(Outcome::Lose),
-        _ => None
+        _ => None,
     }
 }
+
 fn main() {
     let mut args = Cli::parse();
     println!("Constructing game tree...");
@@ -79,7 +84,14 @@ fn main() {
             metastate.p1goal, metastate.p2goal
         );
         println!("{:?}", game_tree.states[metastate.state]);
-        println!("EV: {} CF Prob {}", cfr.expected_value[&metastate], cfr.counterfactual_probs[&metastate]);
+        println!(
+            "EV: {} CF Prob {} Parent CF Prob {:?}",
+            cfr.expected_value[&metastate],
+            cfr.counterfactual_probs[&metastate],
+            metastate
+                .parent(&game_tree)
+                .map(|m| cfr.counterfactual_probs[&m])
+        );
         print!("Regrets: [");
         for child in metastate.children(&game_tree) {
             print!("{:1.4}, ", cfr.metastate_regrets[&child]);
@@ -87,21 +99,35 @@ fn main() {
         println!("]\n");
 
         let infostate = metastate.info_state(&game_tree);
-        println!("Infostate regrets {:?}", cfr.infostate_regrets.0[&infostate]);
-        println!("Total regrets {:?}", cfr.total_regrets.0[&infostate]);
         println!(
-            "Current strategy {:?}",
-            strategy.probs[&infostate]
+            "Infostate regrets {:?}",
+            cfr.infostate_regrets.0[&infostate]
         );
+        println!("Total regrets {:?}", cfr.total_regrets.0[&infostate]);
+        println!("Current strategy {:?}", strategy.probs[&infostate]);
         println!(
             "Average strategy {:?}",
             cfr.average_strategy.probs[&infostate]
         );
-        println!("Best response value for P1 {:?} P2 {:?}", 
-            best_response.p1_value.get(&InfoState{ state:metastate.state, goal: metastate.p1goal}),
-            best_response.p2_value.get(&InfoState{ state:metastate.state, goal: metastate.p2goal}),
+        println!(
+            "Best response value for P1 {:?} P2 {:?}",
+            best_response.p1_value.get(&InfoState {
+                state: metastate.state,
+                goal: metastate.p1goal
+            }),
+            best_response.p2_value.get(&InfoState {
+                state: metastate.state,
+                goal: metastate.p2goal
+            }),
         );
-        println!("Best response strategy: {:?}", best_response.strategy.probs.get(&infostate).unwrap_or(&vec![]));
+        println!(
+            "Best response strategy: {:?}",
+            best_response
+                .strategy
+                .probs
+                .get(&infostate)
+                .unwrap_or(&vec![])
+        );
 
         print!("> ");
         std::io::stdout().flush().unwrap();
@@ -115,25 +141,27 @@ fn main() {
                         (cfr, strategy, best_response) = load_iteration(&mut args, iteration);},
                         Err(e) => println!("invalid iteration {}", e)
                 };
-                
             }
             'm' => {
-                let position :usize= line[1..].trim().parse().unwrap();
-                if position > 9 || position <1 {
-                    println!("Bad position {}", position);
-                    continue;
-                }
-                let mut child_state = game_tree.states[metastate.state].clone();
-                child_state.moves[position-1]=child_state.moves.iter().max().unwrap()+1;
-                let mut found = false;
-                for symmetric_child in game_tree.children[&metastate.state].iter() {
-                    if child_state.is_symmetry(&game_tree.states[*symmetric_child]) {
-                        metastate.state = *symmetric_child;
-                        found = true;
+                if let Ok(position)  = line[1..].trim().parse::<usize>(){
+                    if position > 9 || position <1 {
+                        println!("Bad position {}", position);
+                        continue;
                     }
-                }
-                if !found {
-                    println!("Invalid move!");
+                    let mut child_state = game_tree.states[metastate.state].clone();
+                    child_state.moves[position-1]=child_state.moves.iter().max().unwrap()+1;
+                    let mut found = false;
+                    for symmetric_child in game_tree.children[&metastate.state].iter() {
+                        if child_state.is_symmetry(&game_tree.states[*symmetric_child]) {
+                            metastate.state = *symmetric_child;
+                            found = true;
+                        }
+                    }
+                    if !found {
+                        println!("Invalid move!");
+                    }
+                } else {
+                    println!("Cannot parse move.");
                 }
             }
             'u' => {

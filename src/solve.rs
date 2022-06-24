@@ -22,7 +22,6 @@ struct Cli {
     /// The path to the output directory
     #[clap(short, long, parse(from_os_str), value_hint = ValueHint::DirPath)]
     output_dir: std::path::PathBuf,
-
 }
 
 fn main() {

@@ -60,7 +60,8 @@ fn main() {
     bincode::serialize_into(
         BufWriter::new(File::create(&args.solutions_dir).expect("couldn't open file")),
         &best_response,
-    ).unwrap();
+    )
+    .unwrap();
     args.solutions_dir.pop();
 
     let p1_exploiter = Strategy::splice(&cfr.average_strategy, &best_response.strategy, &game_tree);
