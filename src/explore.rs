@@ -1,7 +1,9 @@
 use bincode;
 use clap::Parser;
 use clap::ValueHint;
+use std::collections::HashMap;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::BufReader;
 use std::io::Write;
 
@@ -16,7 +18,19 @@ struct Cli {
     solutions_dir: std::path::PathBuf,
 }
 
-fn load_iteration(args: &mut Cli, i: usize) -> (CFR, Strategy) {
+fn best_response(args:&mut Cli, i:usize) -> BestResponse {
+    let mut result = BestResponse {p1_value: HashMap::new(), p2_value: HashMap::new(), strategy: Strategy { probs: HashMap::new()}};
+    args.solutions_dir.push(format!("best_response_{}.bincode", i));
+    if let Ok(f) = File::open(&args.solutions_dir) {
+        result= bincode::deserialize_from(BufReader::new(
+            f
+        ))
+        .unwrap();   
+    }
+    args.solutions_dir.pop();
+    return result;
+}
+fn load_iteration(args: &mut Cli, i: usize) -> (CFR, Strategy, BestResponse) {
     args.solutions_dir.push(format!("debug_{}.bincode", i));
     let cfr = bincode::deserialize_from(BufReader::new(
         File::open(&args.solutions_dir).expect("couldn't open file"),
@@ -29,7 +43,7 @@ fn load_iteration(args: &mut Cli, i: usize) -> (CFR, Strategy) {
     ))
     .unwrap();
     args.solutions_dir.pop();
-    return (cfr, strategy);
+    return (cfr, strategy, best_response(args, i));
 }
 
 fn char_to_outcome(c:char) -> Option<Outcome> {
@@ -50,7 +64,7 @@ fn main() {
 
     let mut iteration = 0;
 
-    let (mut cfr, mut strategy) = load_iteration(&mut args, iteration);
+    let (mut cfr, mut strategy, mut best_response) = load_iteration(&mut args, iteration);
 
     let mut metastate = MetaState {
         state: 0,
@@ -65,7 +79,7 @@ fn main() {
             metastate.p1goal, metastate.p2goal
         );
         println!("{:?}", game_tree.states[metastate.state]);
-        println!("EV: {:1.4} CP Prob {:1.4}", cfr.expected_value[&metastate], cfr.counterfactual_probs[&metastate]);
+        println!("EV: {} CF Prob {}", cfr.expected_value[&metastate], cfr.counterfactual_probs[&metastate]);
         print!("Regrets: [");
         for child in metastate.children(&game_tree) {
             print!("{:1.4}, ", cfr.metastate_regrets[&child]);
@@ -77,12 +91,17 @@ fn main() {
         println!("Total regrets {:?}", cfr.total_regrets.0[&infostate]);
         println!(
             "Current strategy {:?}",
-            strategy.probs[&metastate.info_state(&game_tree)]
+            strategy.probs[&infostate]
         );
         println!(
             "Average strategy {:?}",
-            cfr.average_strategy.probs[&metastate.info_state(&game_tree)]
+            cfr.average_strategy.probs[&infostate]
         );
+        println!("Best response value for P1 {:?} P2 {:?}", 
+            best_response.p1_value.get(&InfoState{ state:metastate.state, goal: metastate.p1goal}),
+            best_response.p2_value.get(&InfoState{ state:metastate.state, goal: metastate.p2goal}),
+        );
+        println!("Best response strategy: {:?}", best_response.strategy.probs.get(&infostate).unwrap_or(&vec![]));
 
         print!("> ");
         std::io::stdout().flush().unwrap();
@@ -93,7 +112,7 @@ fn main() {
             'i' => {
                 match line[1..].trim().parse() {
                     Ok(i) => {iteration = i;
-                        (cfr, strategy) = load_iteration(&mut args, iteration);},
+                        (cfr, strategy, best_response) = load_iteration(&mut args, iteration);},
                         Err(e) => println!("invalid iteration {}", e)
                 };
                 

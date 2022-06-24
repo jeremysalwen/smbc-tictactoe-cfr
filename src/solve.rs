@@ -13,8 +13,12 @@ use lib::*;
 #[derive(Parser)]
 struct Cli {
     /// The number of iterations of CFR to run.
-    #[clap(short, long, default_value_t = 10)]
+    #[clap(long, default_value_t = 10)]
     iterations: usize,
+
+    #[clap(long)]
+    only_save_last: bool,
+
     /// The path to the output directory
     #[clap(short, long, parse(from_os_str), value_hint = ValueHint::DirPath)]
     output_dir: std::path::PathBuf,
@@ -37,20 +41,20 @@ fn main() {
         println!("Computing CFR iteration {}...", i);
         let new_strategy = cfr.cfr_round(&strategy, &game_tree);
 
+        if !args.only_save_last || i == args.iterations - 1 {
+            println!("Saving iteration to file...");
+            args.output_dir.push(format!("debug_{}.bincode", i));
+            let json_file =
+                BufWriter::new(File::create(&args.output_dir).expect("couldn't create file"));
+            args.output_dir.pop();
+            bincode::serialize_into(json_file, &cfr).expect("could not serialize");
 
-        println!("Saving iteration to file...");
-        args.output_dir.push(format!("debug_{}.bincode", i));
-        let json_file =
-            BufWriter::new(File::create(&args.output_dir).expect("couldn't create file"));
-        args.output_dir.pop();
-        bincode::serialize_into(json_file, &cfr).expect("could not serialize");
-
-        args.output_dir.push(format!("strategy_{}.bincode", i));
-        let json_file =
-            BufWriter::new(File::create(&args.output_dir).expect("couldn't create file"));
-        args.output_dir.pop();
-        bincode::serialize_into(json_file, &strategy).expect("could not serialize");
-
+            args.output_dir.push(format!("strategy_{}.bincode", i));
+            let json_file =
+                BufWriter::new(File::create(&args.output_dir).expect("couldn't create file"));
+            args.output_dir.pop();
+            bincode::serialize_into(json_file, &strategy).expect("could not serialize");
+        }
         strategy = new_strategy;
     }
     println!("Finished solving!");

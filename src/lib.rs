@@ -5,9 +5,8 @@ use std::{
     fmt::Debug,
 };
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
 use strum_macros::Display;
-
+use strum_macros::EnumIter;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CFR {
@@ -16,7 +15,7 @@ pub struct CFR {
     pub t: usize,
 
     // Intermediate values, for debugging.
-    pub expected_value : HashMap<MetaState, f64>,
+    pub expected_value: HashMap<MetaState, f64>,
     pub counterfactual_probs: HashMap<MetaState, f64>,
     pub metastate_regrets: HashMap<MetaState, f64>,
     pub infostate_regrets: InfoStateRegrets,
@@ -82,7 +81,8 @@ impl CFR {
         //     println!("Goals {:?} {:?}", s.p1goal, s.p2goal);
         //     println!("{:?}", game_tree.states[s.state]);
         // }
-        self.metastate_regrets = strategy.metastate_regrets(tree, &self.expected_value, &self.counterfactual_probs);
+        self.metastate_regrets =
+            strategy.metastate_regrets(tree, &self.expected_value, &self.counterfactual_probs);
         // for (s, regret) in &metastate_regrets {
         //     println!("State has regret {}:", regret);
         //     println!("Goals {:?} {:?}", s.p1goal, s.p2goal);
@@ -142,6 +142,14 @@ impl MetaState {
                 p2goal: self.p2goal,
             })
             .collect()
+    }
+
+    pub fn parent(&self, tree: &GameTree) -> Option<MetaState> {
+        tree.parents.get(&self.state).map(|s| MetaState {
+            state: *s,
+            p1goal: self.p1goal,
+            p2goal: self.p2goal,
+        })
     }
     pub fn outcomes(&self, tree: &GameTree) -> Option<(bool, bool)> {
         tree.terminals
@@ -337,7 +345,6 @@ impl Strategy {
                         Player::Player1 => (&mut counterfactual_probs2, &mut counterfactual_probs1),
                         Player::Player2 => (&mut counterfactual_probs1, &mut counterfactual_probs2),
                     };
-                    if id == 0 {}
                     let (active_prob, passive_prob) = (
                         *active_hashmap.entry(metastate).or_insert(1.0 / 9.0),
                         *passive_hashmap.entry(metastate).or_insert(1.0 / 9.0),
@@ -416,9 +423,43 @@ impl Strategy {
         return result;
     }
 
-    pub fn best_response(&self, tree: &GameTree, outcome_values: &OutcomeValues) -> Strategy {
+    pub fn splice(
+        player1_strategy: &Strategy,
+        player2_strategy: &Strategy,
+        tree: &GameTree,
+    ) -> Strategy {
         let mut result = HashMap::new();
-        for (i, _) in tree.states.iter().enumerate().rev() {
+        for (infostate, probs) in &player1_strategy.probs {
+            if tree.states[infostate.state].current_player() == Player::Player1 {
+                result.insert(*infostate, probs.clone());
+            }
+        }
+        for (infostate, probs) in &player2_strategy.probs {
+            if tree.states[infostate.state].current_player() == Player::Player2 {
+                result.insert(*infostate, probs.clone());
+            }
+        }
+        return Strategy { probs: result };
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BestResponse {
+    pub p1_value: HashMap<InfoState, f64>,
+    pub p2_value: HashMap<InfoState, f64>,
+    pub strategy: Strategy,
+}
+
+impl BestResponse {
+    pub fn new(
+        strategy: &Strategy,
+        tree: &GameTree,
+        counterfactual_probs: &HashMap<MetaState, f64>,
+        outcome_values: &OutcomeValues,
+    ) -> BestResponse {
+        let mut p1_unnormalized_value = HashMap::<InfoState, f64>::new();
+        let mut p2_unnormalized_value = HashMap::<InfoState, f64>::new();
+        for (i, state) in tree.states.iter().enumerate().rev() {
             for p1goal in Outcome::iter() {
                 for p2goal in Outcome::iter() {
                     let metastate = MetaState {
@@ -426,31 +467,105 @@ impl Strategy {
                         p1goal,
                         p2goal,
                     };
+                    let mut active_player_value = 0.0;
+                    let mut passive_player_value = 0.0;
+
+                    let (active_unnormalized_values, passive_unnormalized_values) = match state
+                        .current_player()
+                    {
+                        Player::Player1 => (&mut p1_unnormalized_value, &mut p2_unnormalized_value),
+                        Player::Player2 => (&mut p2_unnormalized_value, &mut p1_unnormalized_value),
+                    };
+                    let (active_goal, passive_goal) = match state.current_player() {
+                        Player::Player1 => (p1goal, p2goal),
+                        Player::Player2 => (p2goal, p1goal),
+                    };
                     if let Some(outcomes) = metastate.outcomes(tree) {
-                        result.insert(metastate, outcome_values.evaluate(outcomes));
+                        let outcome_value = outcome_values.evaluate(outcomes);
+                        active_player_value = outcome_value;
+                        passive_player_value = outcome_value;
                     } else {
-                        let infostate = metastate.info_state(tree);
-                        let mut sum = 0f64;
-                        let mut count = 0f64;
-                        for (p, child) in itertools::zip(
-                            self.probs[&infostate].iter(),
-                            metastate.children(tree).iter(),
-                        ) {
-                            let child_value = *result.get(child).unwrap();
-                            sum += child_value * p;
-                            count += p;
-                        }
-                        result.insert(metastate, sum / count);
-                    }
+                        active_player_value = tree.children[&metastate.state]
+                            .iter()
+                            .map(|c| {
+                                active_unnormalized_values[&InfoState {
+                                    state: *c,
+                                    goal: active_goal,
+                                }]
+                            })
+                            .reduce(if state.current_player() == Player::Player1 {
+                                f64::max
+                            } else {
+                                f64::min
+                            })
+                            .unwrap();
+                        passive_player_value = itertools::zip(
+                            strategy.probs[&metastate.info_state(tree)].iter(),
+                            tree.children[&metastate.state].iter(),
+                        )
+                        .map(|(p, c)| {
+                            p * passive_unnormalized_values[&InfoState {
+                                state: *c,
+                                goal: passive_goal,
+                            }]
+                        })
+                        .sum();
+                    };
+                    *active_unnormalized_values
+                        .entry(metastate.info_state(tree))
+                        .or_insert(0.0) += counterfactual_probs[&metastate] * active_player_value;
+                    *passive_unnormalized_values
+                        .entry(metastate.info_state(tree))
+                        .or_insert(0.0) += metastate
+                        .parent(tree)
+                        .map(|p| counterfactual_probs[&p])
+                        .unwrap_or(1.0 / 9.0)
+                        * passive_player_value;
                 }
             }
         }
-        return Strategy {
+        let mut result = Strategy {
             probs: HashMap::new(),
+        };
+        for (i, state) in tree.states.iter().enumerate().rev() {
+            for goal in Outcome::iter() {
+                let infostate = InfoState { state: i, goal };
+
+                let mut best_value = None;
+                let mut best_index = None;
+
+                for (i, c) in tree.children[&i].iter().enumerate() {
+                    let value = match state.current_player() {
+                        Player::Player1 => &p1_unnormalized_value,
+                        Player::Player2 => &p2_unnormalized_value,
+                    }[&InfoState {
+                        state: *c,
+                        goal: goal,
+                    }];
+                    if best_value.is_none()
+                        || (state.current_player() == Player::Player1
+                            && value > best_value.unwrap())
+                        || (state.current_player() == Player::Player2
+                            && value < best_value.unwrap())
+                    {
+                        best_value = Some(value);
+                        best_index = Some(i);
+                    }
+                }
+                let mut action_probs = vec![0.0; tree.children[&i].len()];
+                if let Some(ind) = best_index {
+                    action_probs[ind] = 1.0;
+                }
+                result.probs.insert(infostate, action_probs);
+            }
+        }
+        return BestResponse {
+            p1_value: p1_unnormalized_value,
+            p2_value: p2_unnormalized_value,
+            strategy: result,
         };
     }
 }
-
 #[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Clone, Copy, EnumIter, Debug, Display)]
 pub enum Outcome {
     Win,
