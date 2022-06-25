@@ -7,6 +7,10 @@ use std::{
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CFR {
@@ -73,7 +77,7 @@ impl CFR {
                 avg_return += ret;
             }
         }
-        println!("Overall expected value {}", avg_return / 4.0);
+        println!("Overall expected value {}", avg_return / 9.0);
 
         self.counterfactual_probs = strategy.counterfactual_probs(tree);
         // for (s, prob) in &counterfactual_probs {
@@ -441,6 +445,17 @@ impl Strategy {
         }
         return Strategy { probs: result };
     }
+
+    pub fn max_difference(&self, other: &Strategy) -> f64 {
+        let mut max = 0.0;
+        for (k,v) in self.probs.iter() {
+            let other_probs = &other.probs[k];
+            for i in 0..v.len() {
+                max = f64::max(f64::abs(v[i]-other_probs[i]), max);
+            }
+        }
+        return max;
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -609,6 +624,18 @@ impl Outcome {
             Outcome::Win => Outcome::Lose,
             Outcome::Lose => Outcome::Win,
             Outcome::Tie => Outcome::Tie,
+        }
+    }
+}
+
+
+
+impl Distribution<Outcome> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Outcome {
+        match rng.gen_range(0..=2) { // rand 0.8
+            0 => Outcome::Win,
+            1 => Outcome::Lose,
+            _ => Outcome::Tie,
         }
     }
 }

@@ -40,6 +40,8 @@ fn main() {
         println!("Computing CFR iteration {}...", i);
         let new_strategy = cfr.cfr_round(&strategy, &game_tree);
 
+        println!("Max prob difference from old strategy {}", new_strategy.max_difference(&strategy));
+
         if !args.only_save_last || i == args.iterations - 1 {
             println!("Saving iteration to file...");
             args.output_dir.push(format!("debug_{}.bincode", i));
@@ -80,5 +82,5 @@ fn main() {
             avg_return += ret;
         }
     }
-    println!("Overall expected value {}", avg_return / 4.0);
+    println!("Overall expected value {}", avg_return / 9.0);
 }

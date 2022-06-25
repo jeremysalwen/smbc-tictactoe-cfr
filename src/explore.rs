@@ -152,7 +152,7 @@ fn main() {
                     child_state.moves[position-1]=child_state.moves.iter().max().unwrap()+1;
                     let mut found = false;
                     for symmetric_child in game_tree.children[&metastate.state].iter() {
-                        if child_state.is_symmetry(&game_tree.states[*symmetric_child]) {
+                        if child_state.drop_history().is_symmetry(&game_tree.states[*symmetric_child].drop_history()) {
                             metastate.state = *symmetric_child;
                             found = true;
                         }

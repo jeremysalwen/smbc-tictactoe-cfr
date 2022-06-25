@@ -1,4 +1,5 @@
 use bincode;
+use clap::ArgAction;
 use clap::Parser;
 use clap::ValueHint;
 use std::fs::File;
@@ -19,6 +20,9 @@ struct Cli {
 
     #[clap(short, long)]
     iteration: usize,
+
+    #[clap(short, long, action = ArgAction::Set,  default_value_t = true)]
+    average_strategy: bool,
 }
 
 fn load(args: &mut Cli) -> (CFR, Strategy) {
@@ -46,12 +50,19 @@ fn main() {
     println!("{} States in the game tree", game_tree.states.len());
     println!("{} Terminal states", game_tree.terminals.len());
 
-    let (mut cfr, mut strategy) = load(&mut args);
+    let (cfr, strategy) = load(&mut args);
 
+    println!("Average strat {}", args.average_strategy);
+    let base_strategy = if args.average_strategy {
+        &cfr.average_strategy
+    } else {
+        &strategy
+    };
+    let counterfactual_probs = base_strategy.counterfactual_probs(&game_tree);
     let best_response = BestResponse::new(
-        &cfr.average_strategy,
+        base_strategy,
         &game_tree,
-        &cfr.counterfactual_probs,
+        &counterfactual_probs,
         &OutcomeValues::default(),
     );
 
@@ -64,8 +75,8 @@ fn main() {
     .unwrap();
     args.solutions_dir.pop();
 
-    let p1_exploiter = Strategy::splice(&cfr.average_strategy, &best_response.strategy, &game_tree);
-    let p2_exploiter = Strategy::splice(&best_response.strategy, &cfr.average_strategy, &game_tree);
+    let p1_exploiter = Strategy::splice(base_strategy, &best_response.strategy, &game_tree);
+    let p2_exploiter = Strategy::splice(&best_response.strategy, base_strategy, &game_tree);
 
     for (s, prob) in &p1_exploiter.probs {
         println!("State {} has probs {:?}:", s.state, prob);
