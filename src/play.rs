@@ -126,7 +126,7 @@ fn main() {
         match game_tree.terminals.get(&metastate.state) {
             Some(outcome) => {
                 println!("==============================");
-                println!("Round ended.  You {}.", outcome);
+                println!("Round ended.  You {}.", if humanplayer == Player::Player1 {outcome.clone()} else {outcome.reverse()});
                 println!(
                     "The bot's goal was {}",
                     if humanplayer == Player::Player1 {

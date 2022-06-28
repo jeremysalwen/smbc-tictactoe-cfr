@@ -85,7 +85,7 @@ fn main() {
     }
     for (name, spliced_strat) in [("First", p1_exploiter), ("Second", p2_exploiter)] {
         println!("Exploitability of {} player:", name);
-        let expected_values = spliced_strat.expected_values(&game_tree, OutcomeValues::default());
+        let expected_values = spliced_strat.expected_values(&game_tree, &OutcomeValues::default());
         let mut avg_return = 0f64;
         for p1goal in Outcome::iter() {
             for p2goal in Outcome::iter() {

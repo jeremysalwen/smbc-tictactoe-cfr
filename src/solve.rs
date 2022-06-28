@@ -5,6 +5,7 @@ use clap::Parser;
 use clap::ValueHint;
 use std::fs::File;
 use std::io::BufWriter;
+use clap::ArgAction;
 
 mod lib;
 use lib::*;
@@ -16,12 +17,17 @@ struct Cli {
     #[clap(long, default_value_t = 10)]
     iterations: usize,
 
-    #[clap(long)]
+    
+    #[clap(long, action = ArgAction::Set,  default_value_t = false)]
     only_save_last: bool,
 
     /// The path to the output directory
     #[clap(short, long, parse(from_os_str), value_hint = ValueHint::DirPath)]
     output_dir: std::path::PathBuf,
+
+    // Epsilon reward for playing "small" moves to encourage regularization.
+    #[clap(short, long, default_value_t = 0.0)]
+    small_move_epsilon: f64,
 }
 
 fn main() {
@@ -32,15 +38,25 @@ fn main() {
     println!("{} States in the game tree", game_tree.states.len());
     println!("{} Terminal states", game_tree.terminals.len());
 
+    let outcome_values = OutcomeValues {
+        both_win: 0f64,
+        p1_win: 1f64,
+        p2_win: -1f64,
+        both_lose: 0f64,
+        first_move_epsilon: args.small_move_epsilon,
+    };
     let uniform = Strategy::uniform(&game_tree);
 
     let mut cfr = CFR::new();
     let mut strategy = uniform.clone();
     for i in 0..args.iterations {
         println!("Computing CFR iteration {}...", i);
-        let new_strategy = cfr.cfr_round(&strategy, &game_tree);
+        let new_strategy = cfr.cfr_round(&strategy, &game_tree, &outcome_values);
 
-        println!("Max prob difference from old strategy {}", new_strategy.max_difference(&strategy));
+        println!(
+            "Max prob difference from old strategy {}",
+            new_strategy.max_difference(&strategy)
+        );
 
         if !args.only_save_last || i == args.iterations - 1 {
             println!("Saving iteration to file...");
@@ -66,7 +82,7 @@ fn main() {
     }
     let expected_values = cfr
         .average_strategy
-        .expected_values(&game_tree, OutcomeValues::default());
+        .expected_values(&game_tree, &outcome_values);
     let mut avg_return = 0f64;
     for p1goal in Outcome::iter() {
         for p2goal in Outcome::iter() {

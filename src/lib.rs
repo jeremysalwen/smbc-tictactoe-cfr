@@ -1,4 +1,8 @@
 use itertools::Itertools;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -7,10 +11,6 @@ use std::{
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
-use rand::{
-    distributions::{Distribution, Standard},
-    Rng,
-};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CFR {
@@ -53,8 +53,8 @@ impl CFR {
         self.t += 1;
     }
 
-    pub fn cfr_round(&mut self, strategy: &Strategy, tree: &GameTree) -> Strategy {
-        self.expected_value = strategy.expected_values(&tree, OutcomeValues::default());
+    pub fn cfr_round(&mut self, strategy: &Strategy, tree: &GameTree, outcome_values: &OutcomeValues) -> Strategy {
+        self.expected_value = strategy.expected_values(&tree, outcome_values);
         // for (s, value) in &ev {
         //     println!("State has value {}:", value);
         //     println!("Goals {:?} {:?}", s.p1goal, s.p2goal);
@@ -173,6 +173,8 @@ pub struct OutcomeValues {
     pub p1_win: f64,
     pub p2_win: f64,
     pub both_lose: f64,
+    // Epsilon reward for making "smaller" move numbers.
+    pub first_move_epsilon: f64,
 }
 
 impl OutcomeValues {
@@ -182,15 +184,22 @@ impl OutcomeValues {
             p1_win: 1f64,
             p2_win: -1f64,
             both_lose: 0f64,
+            first_move_epsilon: 0f64,
         }
     }
-    pub fn evaluate(&self, outcomes: (bool, bool)) -> f64 {
-        match outcomes {
+    pub fn evaluate(&self, state: &MetaState, tree: &GameTree, outcomes: (bool, bool)) -> f64 {
+        let mut result = match outcomes {
             (true, true) => self.both_win,
             (true, false) => self.p1_win,
             (false, true) => self.p2_win,
             (false, false) => self.both_lose,
+        };
+
+        if self.first_move_epsilon != 0.0 {
+            let (p1movesum, p2movesum) = tree.states[state.state].move_sums();
+            result += self.first_move_epsilon * (p2movesum - p1movesum) as f64;
         }
+        return result;
     }
 }
 
@@ -300,7 +309,7 @@ impl Strategy {
     pub fn expected_values(
         &self,
         tree: &GameTree,
-        outcome_values: OutcomeValues,
+        outcome_values: &OutcomeValues,
     ) -> HashMap<MetaState, f64> {
         let mut result = HashMap::new();
         for (i, _) in tree.states.iter().enumerate().rev() {
@@ -312,7 +321,7 @@ impl Strategy {
                         p2goal,
                     };
                     if let Some(outcomes) = metastate.outcomes(tree) {
-                        result.insert(metastate, outcome_values.evaluate(outcomes));
+                        result.insert(metastate, outcome_values.evaluate(&metastate, tree, outcomes));
                     } else {
                         let infostate = metastate.info_state(tree);
                         let mut sum = 0f64;
@@ -448,10 +457,10 @@ impl Strategy {
 
     pub fn max_difference(&self, other: &Strategy) -> f64 {
         let mut max = 0.0;
-        for (k,v) in self.probs.iter() {
+        for (k, v) in self.probs.iter() {
             let other_probs = &other.probs[k];
             for i in 0..v.len() {
-                max = f64::max(f64::abs(v[i]-other_probs[i]), max);
+                max = f64::max(f64::abs(v[i] - other_probs[i]), max);
             }
         }
         return max;
@@ -503,7 +512,7 @@ impl BestResponse {
                         Player::Player2 => (p2goal, p1goal),
                     };
                     if let Some(outcomes) = metastate.outcomes(tree) {
-                        let outcome_value = outcome_values.evaluate(outcomes);
+                        let outcome_value = outcome_values.evaluate(&metastate, tree, outcomes);
                         active_player_value = outcome_value;
                         passive_player_value = outcome_value;
                     } else {
@@ -573,8 +582,10 @@ impl BestResponse {
         for (i, state) in tree.states.iter().enumerate().rev() {
             for goal in Outcome::iter() {
                 let infostate = InfoState { state: i, goal };
-                *p1_unnormalized_value.get_mut(&infostate).unwrap() /= p1_normalizing_sum[&infostate];
-                *p2_unnormalized_value.get_mut(&infostate).unwrap() /= p2_normalizing_sum[&infostate];
+                *p1_unnormalized_value.get_mut(&infostate).unwrap() /=
+                    p1_normalizing_sum[&infostate];
+                *p2_unnormalized_value.get_mut(&infostate).unwrap() /=
+                    p2_normalizing_sum[&infostate];
 
                 let mut best_value = None;
                 let mut best_index = None;
@@ -628,11 +639,10 @@ impl Outcome {
     }
 }
 
-
-
 impl Distribution<Outcome> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Outcome {
-        match rng.gen_range(0..=2) { // rand 0.8
+        match rng.gen_range(0..=2) {
+            // rand 0.8
             0 => Outcome::Win,
             1 => Outcome::Lose,
             _ => Outcome::Tie,
@@ -891,5 +901,19 @@ impl State {
             }
         }
         return false;
+    }
+
+    pub fn move_sums(&self) -> (i64, i64) {
+        let (mut p1sum, mut p2sum) = (0, 0);
+        for (i, &m) in self.moves.iter().enumerate() {
+            if m != 0 {
+                if m % 2 == 1 {
+                    p1sum += i as i64;
+                } else {
+                    p2sum += i as i64;
+                }
+            }
+        }
+        return (p1sum, p2sum);
     }
 }
