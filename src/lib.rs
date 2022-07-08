@@ -13,7 +13,15 @@ use strum_macros::Display;
 use strum_macros::EnumIter;
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct CFRDiscounting {
+    pub alpha: f64,
+    pub beta: f64,
+    pub gamma: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CFR {
+    pub discounting: Option<CFRDiscounting>,
     pub total_regrets: InfoStateRegrets,
     pub average_strategy: Strategy,
     pub t: usize,
@@ -25,8 +33,9 @@ pub struct CFR {
     pub infostate_regrets: InfoStateRegrets,
 }
 impl CFR {
-    pub fn new() -> CFR {
+    pub fn new(discounting: Option<CFRDiscounting>) -> CFR {
         CFR {
+            discounting,
             total_regrets: InfoStateRegrets::empty(),
             average_strategy: Strategy {
                 probs: HashMap::new(),
@@ -38,7 +47,13 @@ impl CFR {
             infostate_regrets: InfoStateRegrets::empty(),
         }
     }
+
     fn update_avg_strategy(&mut self, strategy: &Strategy) {
+        let gamma = if let Some(discount) = &self.discounting {
+            discount.gamma
+        } else {
+            1.0
+        };
         for (infostate, probs) in &strategy.probs {
             let avg_probs = self
                 .average_strategy
@@ -46,7 +61,7 @@ impl CFR {
                 .entry(infostate.clone())
                 .or_insert_with(|| vec![0.0; probs.len()]);
             for i in 0..probs.len() {
-                avg_probs[i] = (self.t as f64 / (self.t + 1) as f64) * avg_probs[i]
+                avg_probs[i] = (self.t as f64 / (self.t + 1) as f64).powf(gamma) * avg_probs[i]
                     + 1.0 / (self.t + 1) as f64 * probs[i];
             }
         }
@@ -101,6 +116,10 @@ impl CFR {
         //     println!("Goals {:?}", s.goal);
         //     println!("{:?}", game_tree.states[s.state]);
         // }
+
+        if let Some(discount) = &self.discounting {
+            self.total_regrets.discount(discount, self.t);
+        }
         self.total_regrets.add(&self.infostate_regrets);
         let strategy = self.total_regrets.regret_matching_strategy(tree);
         // for (s, prob) in &strategy.probs {
@@ -240,6 +259,20 @@ impl InfoStateRegrets {
             }
         }
         return InfoStateRegrets(result);
+    }
+
+    pub fn discount(&mut self, discount: &CFRDiscounting, t: usize) {
+        for (infostate, regrets) in self.0.iter_mut() {
+            for regret in regrets {
+                if *regret >= 0.0 {
+                    let exp = ((t+1) as f64).powf(discount.alpha);
+                    *regret *= exp / (exp + 1.0);
+                } else {
+                    let exp = ((t+1) as f64).powf(discount.beta);
+                    *regret *= exp / (exp + 1.0);
+                }
+            }
+        }
     }
 
     pub fn add(&mut self, other: &InfoStateRegrets) {
@@ -908,9 +941,9 @@ impl State {
         for (i, &m) in self.moves.iter().enumerate() {
             if m != 0 {
                 if m % 2 == 1 {
-                    p1sum += i as i64;
+                    p1sum += 9i64.pow((8-m) as u32) * i as i64;
                 } else {
-                    p2sum += i as i64;
+                    p2sum += 9i64.pow((8-m) as u32) * i as i64;
                 }
             }
         }

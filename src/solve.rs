@@ -1,11 +1,11 @@
 use strum::IntoEnumIterator;
 
 use bincode;
+use clap::ArgAction;
 use clap::Parser;
 use clap::ValueHint;
 use std::fs::File;
 use std::io::BufWriter;
-use clap::ArgAction;
 
 mod lib;
 use lib::*;
@@ -17,7 +17,6 @@ struct Cli {
     #[clap(long, default_value_t = 10)]
     iterations: usize,
 
-    
     #[clap(long, action = ArgAction::Set,  default_value_t = false)]
     only_save_last: bool,
 
@@ -28,6 +27,16 @@ struct Cli {
     // Epsilon reward for playing "small" moves to encourage regularization.
     #[clap(short, long, default_value_t = 0.0)]
     small_move_epsilon: f64,
+
+    #[clap(long, action = ArgAction::Set,  default_value_t = false)]
+    discount: bool,
+
+    #[clap(long, default_value_t = 1.5)]
+    discount_alpha: f64,
+    #[clap(long, default_value_t = 0.0)]
+    discount_beta: f64,
+    #[clap(long, default_value_t = 2.0)]
+    discount_gamma: f64,
 }
 
 fn main() {
@@ -47,7 +56,16 @@ fn main() {
     };
     let uniform = Strategy::uniform(&game_tree);
 
-    let mut cfr = CFR::new();
+    let discounting = if args.discount {
+        Some(CFRDiscounting {
+            alpha: args.discount_alpha,
+            beta: args.discount_beta,
+            gamma: args.discount_gamma,
+        })
+    } else {
+        None
+    };
+    let mut cfr = CFR::new(discounting);
     let mut strategy = uniform.clone();
     for i in 0..args.iterations {
         println!("Computing CFR iteration {}...", i);
@@ -75,11 +93,11 @@ fn main() {
         strategy = new_strategy;
     }
     println!("Finished solving!");
-    for (s, prob) in &cfr.average_strategy.probs {
-        println!("State has probs {:?}:", prob);
-        println!("Goals {:?}", s.goal);
-        println!("{:?}", game_tree.states[s.state]);
-    }
+    // for (s, prob) in &cfr.average_strategy.probs {
+    //     println!("State has probs {:?}:", prob);
+    //     println!("Goals {:?}", s.goal);
+    //     println!("{:?}", game_tree.states[s.state]);
+    // }
     let expected_values = cfr
         .average_strategy
         .expected_values(&game_tree, &outcome_values);
