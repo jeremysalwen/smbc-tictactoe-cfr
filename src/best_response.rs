@@ -104,7 +104,7 @@ fn main() {
         println!(
             "Overall exploitability of {} Player: {}",
             name,
-            avg_return / 4.0
+            avg_return / 9.0
         );
     }
 }

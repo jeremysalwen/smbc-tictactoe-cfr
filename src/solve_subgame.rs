@@ -27,8 +27,10 @@ struct Cli {
     // Epsilon reward for playing "small" moves to encourage regularization.
     #[clap(short, long, default_value_t = 0.0)]
     small_move_epsilon: f64,
+    #[clap(short, long, default_value_t = 0.0)]
+    small_move_epsilon_decay: f64,
 
-    #[clap(long, action = ArgAction::Set,  default_value_t = false)]
+    #[clap(long, action = ArgAction::Set,  default_value_t = true)]
     discount: bool,
 
     #[clap(long, default_value_t = 1.5)]
@@ -47,7 +49,7 @@ fn main() {
     println!("{} States in the game tree", game_tree.states.len());
     println!("{} Terminal states", game_tree.terminals.len());
 
-    let outcome_values = OutcomeValues {
+    let mut outcome_values = OutcomeValues {
         both_win: 0f64,
         p1_win: 1f64,
         p2_win: -1f64,
@@ -91,6 +93,9 @@ fn main() {
             bincode::serialize_into(json_file, &strategy).expect("could not serialize");
         }
         strategy = new_strategy;
+
+        outcome_values.first_move_epsilon *= 1.0-args.small_move_epsilon_decay;
+        println!("Small move regularization epsilon is {}", outcome_values.first_move_epsilon);
     }
     println!("Finished solving!");
     // for (s, prob) in &cfr.average_strategy.probs {

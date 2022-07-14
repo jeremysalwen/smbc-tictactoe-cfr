@@ -15,13 +15,20 @@ bincode = "1.3"
 clap = { version = "3.2", features = ["derive"] }
 average = "0.13"
 rand = "0.8.5"
+lazy_static = "1.4.0"
+regex = "1.6.0"
 
 [profile.release]
 debug = true
 
 [[bin]]
-name = "solve"
-path = "src/solve.rs"
+name = "solve_subgame"
+path = "src/solve_subgame.rs"
+
+[[bin]]
+name = "solve_multiround"
+path = "src/solve_multiround.rs"
+
 
 [[bin]]
 name = "best_response"
@@ -32,5 +39,9 @@ name = "explore"
 path = "src/explore.rs"
 
 [[bin]]
-name = "play"
-path = "src/play.rs"
+name = "play_subgame"
+path = "src/play_subgame.rs"
+
+[[bin]]
+name = "play_multiround"
+path = "src/play_multiround.rs"

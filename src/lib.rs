@@ -12,7 +12,7 @@ use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CFRDiscounting {
     pub alpha: f64,
     pub beta: f64,
@@ -61,14 +61,20 @@ impl CFR {
                 .entry(infostate.clone())
                 .or_insert_with(|| vec![0.0; probs.len()]);
             for i in 0..probs.len() {
-                avg_probs[i] = (self.t as f64 / (self.t + 1) as f64).powf(gamma) * avg_probs[i]
-                    + 1.0 / (self.t + 1) as f64 * probs[i];
+                let ratio = (self.t as f64 / (self.t + 1) as f64).powf(gamma);
+                avg_probs[i] =  ratio * avg_probs[i]
+                    + (1.0 - ratio) * probs[i];
             }
         }
         self.t += 1;
     }
 
-    pub fn cfr_round(&mut self, strategy: &Strategy, tree: &GameTree, outcome_values: &OutcomeValues) -> Strategy {
+    pub fn cfr_round(
+        &mut self,
+        strategy: &Strategy,
+        tree: &GameTree,
+        outcome_values: &OutcomeValues,
+    ) -> Strategy {
         self.expected_value = strategy.expected_values(&tree, outcome_values);
         // for (s, value) in &ev {
         //     println!("State has value {}:", value);
@@ -132,6 +138,20 @@ impl CFR {
         self.update_avg_strategy(&strategy);
 
         return strategy;
+    }
+
+    pub fn overall_ev(&self) -> f64 {
+        let mut avg_return = 0f64;
+        for p1goal in Outcome::iter() {
+            for p2goal in Outcome::iter() {
+                avg_return += self.expected_value[&MetaState {
+                    state: 0,
+                    p1goal,
+                    p2goal,
+                }];
+            }
+        }
+        return avg_return / 9.0;
     }
 }
 
@@ -262,13 +282,13 @@ impl InfoStateRegrets {
     }
 
     pub fn discount(&mut self, discount: &CFRDiscounting, t: usize) {
-        for (infostate, regrets) in self.0.iter_mut() {
+        for (_infostate, regrets) in self.0.iter_mut() {
             for regret in regrets {
                 if *regret >= 0.0 {
-                    let exp = ((t+1) as f64).powf(discount.alpha);
+                    let exp = ((t + 1) as f64).powf(discount.alpha);
                     *regret *= exp / (exp + 1.0);
                 } else {
-                    let exp = ((t+1) as f64).powf(discount.beta);
+                    let exp = ((t + 1) as f64).powf(discount.beta);
                     *regret *= exp / (exp + 1.0);
                 }
             }
@@ -354,7 +374,10 @@ impl Strategy {
                         p2goal,
                     };
                     if let Some(outcomes) = metastate.outcomes(tree) {
-                        result.insert(metastate, outcome_values.evaluate(&metastate, tree, outcomes));
+                        result.insert(
+                            metastate,
+                            outcome_values.evaluate(&metastate, tree, outcomes),
+                        );
                     } else {
                         let infostate = metastate.info_state(tree);
                         let mut sum = 0f64;
@@ -768,12 +791,20 @@ pub fn forced_outcomes(all_states: &Vec<State>) -> HashMap<State, Option<Outcome
     return result;
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Hash, Eq, PartialEq, EnumIter)]
 pub enum Player {
     Player1,
     Player2,
 }
 
+impl Player {
+    pub fn opponent(&self) -> Player {
+        match self {
+            Player::Player1 => Player::Player2,
+            Player::Player2 => Player::Player1,
+        }
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct State {
     pub moves: [u8; 9],
@@ -941,9 +972,9 @@ impl State {
         for (i, &m) in self.moves.iter().enumerate() {
             if m != 0 {
                 if m % 2 == 1 {
-                    p1sum += 9i64.pow((8-m) as u32) * i as i64;
+                    p1sum += 9i64.pow((8 - m) as u32) * i as i64;
                 } else {
-                    p2sum += 9i64.pow((8-m) as u32) * i as i64;
+                    p2sum += 9i64.pow((8 - m) as u32) * i as i64;
                 }
             }
         }
