@@ -44,7 +44,7 @@ struct Cli {
     #[clap(long, default_value_t = 2.0)]
     discount_gamma: f64,
 
-    #[clap(short,long, action = ArgAction::Set,  default_value_t = false)]
+    #[clap(short,long, action = ArgAction::Set,  default_value_t = true)]
     alternate_updates: bool,
 }
 
@@ -133,7 +133,12 @@ fn main() {
                             .unwrap_or(&0.0),
                         (true, false) => 1.0,
                         (false, true) => -1.0,
-                        (false, false) => -*evs.get(&Subgame { p2score, p1score }).unwrap_or(&0.0),
+                        (false, false) => -*evs
+                            .get(&Subgame {
+                                p1score: p2score,
+                                p2score: p1score,
+                            })
+                            .unwrap_or(&0.0),
                     };
                     let outcome_values = OutcomeValues {
                         both_win: value_of_score(p1score + 1, p2score + 1),
@@ -143,7 +148,7 @@ fn main() {
                         first_move_epsilon: args.small_move_epsilon
                             * (1.0 - args.small_move_epsilon_decay).powf(i as f64),
                     };
-                    println!("Outcome Values are: {:?} ", outcome_values);
+                    println!("Outcome Values are: {:?} {:?},", outcome_values, evs);
 
                     println!(
                         "Computing CFR iteration {} for subgame ({}, {})...",
@@ -222,6 +227,10 @@ fn main() {
 
     println!("Finished solving!");
 
+    println!("EV's for the subgames:");
+    println!("{:#?}", &evs);
+
+    println!("EVs for the overall game:");
     let first_round_cfr = &solutions[&Subgame {
         p1score: 0,
         p2score: 0,

@@ -40,7 +40,7 @@ struct Cli {
     #[clap(long, default_value_t = 2.0)]
     discount_gamma: f64,
 
-    #[clap(long, action = ArgAction::Set,  default_value_t = false)]
+    #[clap(long, action = ArgAction::Set,  default_value_t = true)]
     alternate_updates: bool,
 }
 

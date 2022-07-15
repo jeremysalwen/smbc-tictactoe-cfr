@@ -5,8 +5,8 @@ For context, see the [SMBC comic](https://www.smbc-comics.com/comic/incomplete) 
 This is a solver for the "Imperfect Information Tic Tac Toe" game which uses [Counterfactual Regret Minimization](http://modelai.gettysburg.edu/2013/cfr/cfr.pdf) to compute an unexploitable strategy (i.e. a [Nash Equilibrium](https://en.wikipedia.org/wiki/Nash_equilibrium)).
 
 ### Results
- - Each round of the game is advantaged to whoever goes second.  With optimal play, they can guarantee to win 1/9 of the time more than their opponent.
- - Because of this, the game to 5 is also advantaged to whoever goes second. They will win on average X% of the time.
+ - Each round of the game is advantaged to whoever goes second.  With optimal play, they can guarantee achieving their goal 1/9 of the time more than their opponent.
+ - Because of this, the game to 5 is also advantaged to whoever goes second. They will win on average %51 of the time with perfect play.
  - There is no pure strategy nash equilibrium.  In other words, you have to randomize your moves to do well at the game.
  - In the equilibrium found by this solver, the advantage for the second player comes from the case where the first player is trying to tie, and the second player is trying to win or lose. (There may be other strategies to achieve the same advantage).
 
@@ -104,6 +104,7 @@ There are a number of parameters you can modify to adjust the training process
  - `--winning-score` is the number of points the game is played to.  By default `5` like in the SMBC comic.
  - `--discount true` enables discounting as in the [Discounted CFR paper](https://arxiv.org/abs/1809.04040). This is enabled by default.  `--discount-alpha`, `--discount-beta` and `--discount-gamma` may also be tweaked from their default values which are copied from the paper.  Disabling `--discount` will cause the solver to use vanilla CFR, which is slower.
  - `--small-move-epsilon` and `--small-move-epsilon-decay` are options I was experimenting with to attempt to regularize the strategy that the solver learns.  For example, if move 1 and move two have the same expected value, I would rather learn a strategy that picks move 1 100% of the time, rather than move 1 some of the time and move 2 some of the time, since the resulting strategy is simpler to understand.  The "small-move-epsilon" is a bonus added to the score that rewards the players for playing "smaller" moves, i.e. moves which are closer to the upper left hand corner.  `--small-move-epsilon-decay` is used to modify reward after each iteration, e.g. if `small-move-epsilon-decay`is 0.01, then after each iteration `small-move-epsilon` will be reduced to be 0.99 times its value the previous iteration.  In my experiments these options did help with regularization, but nowhere near enough to arrive at an analytical solution.
+ - `--alternate-updates true` enables "alternating updates" in the CFR algorithm.  This is how CFR+ and Discounted CFR both work, as these papers report that alternating updates result in faster convergence.   This is enabled by default.
 
  ### How it Works
 
