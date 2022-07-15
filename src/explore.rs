@@ -3,7 +3,6 @@ use clap::Parser;
 use clap::ValueHint;
 use std::collections::HashMap;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::BufReader;
 use std::io::Write;
 

@@ -43,6 +43,9 @@ struct Cli {
     discount_beta: f64,
     #[clap(long, default_value_t = 2.0)]
     discount_gamma: f64,
+
+    #[clap(short,long, action = ArgAction::Set,  default_value_t = false)]
+    alternate_updates: bool,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -105,15 +108,15 @@ fn main() {
     for larger_score in (0..args.winning_score).rev() {
         for smaller_score in (0..=larger_score).rev() {
             for i in 0..i32::MAX {
-                let mut converged = i % args.check_exploitability_every == 0;
-                let mut temp_evs = HashMap::new();
+                let mut converged =
+                    i % args.check_exploitability_every == args.check_exploitability_every - 1;
                 for (p1score, p2score) in
                     [(larger_score, smaller_score), (smaller_score, larger_score)]
                 {
                     let subgame = Subgame { p1score, p2score };
                     let solution = solutions
                         .entry(subgame.clone())
-                        .or_insert_with(|| CFR::new(discounting.clone()));
+                        .or_insert_with(|| CFR::new(discounting.clone(), args.alternate_updates));
                     let strategy = strategies
                         .entry(subgame.clone())
                         .or_insert_with(|| Strategy::uniform(&game_tree).clone());
@@ -140,10 +143,7 @@ fn main() {
                         first_move_epsilon: args.small_move_epsilon
                             * (1.0 - args.small_move_epsilon_decay).powf(i as f64),
                     };
-                    println!(
-                        "Small move regularization epsilon is {}",
-                        outcome_values.first_move_epsilon
-                    );
+                    println!("Outcome Values are: {:?} ", outcome_values);
 
                     println!(
                         "Computing CFR iteration {} for subgame ({}, {})...",
@@ -156,32 +156,31 @@ fn main() {
                         new_strategy.max_difference(&strategy)
                     );
                     *strategy = new_strategy;
-                    evs.insert(subgame, solution.overall_ev());
 
-                    if i % args.check_exploitability_every == 0 {
+                    if i % args.check_exploitability_every == args.check_exploitability_every - 1 {
                         let exploitability =
                             exploitability_bound(&game_tree, &solution, &outcome_values);
                         println!("Exploitability is {}", exploitability);
 
                         if exploitability > args.maximum_subgame_exploitability {
                             converged = false;
-                        } else {
-                            // Compute expected values based on average strategy instead of latest.
-                            let expected_values = solution
-                                .average_strategy
-                                .expected_values(&game_tree, &outcome_values);
-                            let mut avg_return = 0f64;
-                            for p1goal in Outcome::iter() {
-                                for p2goal in Outcome::iter() {
-                                    avg_return += expected_values[&MetaState {
-                                        state: 0,
-                                        p1goal,
-                                        p2goal,
-                                    }];
-                                }
-                            }
-                            temp_evs.insert(p1score > p2score, avg_return / 9.0);
                         }
+
+                        // Compute expected values based on average strategy instead of latest.
+                        let expected_values = solution
+                            .average_strategy
+                            .expected_values(&game_tree, &outcome_values);
+                        let mut avg_return = 0f64;
+                        for p1goal in Outcome::iter() {
+                            for p2goal in Outcome::iter() {
+                                avg_return += expected_values[&MetaState {
+                                    state: 0,
+                                    p1goal,
+                                    p2goal,
+                                }];
+                            }
+                        }
+                        evs.insert(subgame, avg_return / 9.0);
                     }
                 }
                 if converged {
@@ -191,8 +190,6 @@ fn main() {
                         let subgame = Subgame { p1score, p2score };
                         let solution = &solutions[&subgame.clone()];
                         let strategy = &strategies[&subgame.clone()];
-
-                        evs.insert(subgame, temp_evs[&(p1score > p2score)]);
 
                         println!(
                             "Subgame ({}, {}) converged, saving it to file...",

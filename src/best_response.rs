@@ -5,7 +5,6 @@ use clap::ValueHint;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::BufWriter;
-use std::io::Write;
 use strum::IntoEnumIterator;
 
 mod lib;

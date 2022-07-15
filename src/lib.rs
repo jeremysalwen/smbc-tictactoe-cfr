@@ -31,9 +31,11 @@ pub struct CFR {
     pub counterfactual_probs: HashMap<MetaState, f64>,
     pub metastate_regrets: HashMap<MetaState, f64>,
     pub infostate_regrets: InfoStateRegrets,
+
+    pub player_to_update: Option<Player>,
 }
 impl CFR {
-    pub fn new(discounting: Option<CFRDiscounting>) -> CFR {
+    pub fn new(discounting: Option<CFRDiscounting>, alternating_updates: bool) -> CFR {
         CFR {
             discounting,
             total_regrets: InfoStateRegrets::empty(),
@@ -45,28 +47,44 @@ impl CFR {
             counterfactual_probs: HashMap::new(),
             metastate_regrets: HashMap::new(),
             infostate_regrets: InfoStateRegrets::empty(),
+            player_to_update: if alternating_updates {
+                Some(Player::Player1)
+            } else {
+                None
+            },
         }
     }
 
-    fn update_avg_strategy(&mut self, strategy: &Strategy) {
+    fn update_avg_strategy(&mut self, tree: &GameTree, strategy: &Strategy) {
         let gamma = if let Some(discount) = &self.discounting {
             discount.gamma
         } else {
             1.0
         };
         for (infostate, probs) in &strategy.probs {
-            let avg_probs = self
-                .average_strategy
-                .probs
-                .entry(infostate.clone())
-                .or_insert_with(|| vec![0.0; probs.len()]);
-            for i in 0..probs.len() {
-                let ratio = (self.t as f64 / (self.t + 1) as f64).powf(gamma);
-                avg_probs[i] =  ratio * avg_probs[i]
-                    + (1.0 - ratio) * probs[i];
+            if self
+                .player_to_update
+                .map(|p| p == tree.current_player[&infostate.state])
+                .unwrap_or(true)
+            {
+                let avg_probs = self
+                    .average_strategy
+                    .probs
+                    .entry(infostate.clone())
+                    .or_insert_with(|| vec![0.0; probs.len()]);
+                for i in 0..probs.len() {
+                    let ratio = (self.t as f64 / (self.t + 1) as f64).powf(gamma);
+                    avg_probs[i] = ratio * avg_probs[i] + (1.0 - ratio) * probs[i];
+                }
             }
         }
-        self.t += 1;
+        if self
+            .player_to_update
+            .map(|p| p == Player::Player2)
+            .unwrap_or(true)
+        {
+            self.t += 1;
+        }
     }
 
     pub fn cfr_round(
@@ -124,8 +142,11 @@ impl CFR {
         // }
 
         if let Some(discount) = &self.discounting {
-            self.total_regrets.discount(discount, self.t);
+            self.total_regrets
+                .discount(&tree, self.player_to_update, discount, self.t);
         }
+        self.infostate_regrets
+            .for_player(&tree, self.player_to_update);
         self.total_regrets.add(&self.infostate_regrets);
         let strategy = self.total_regrets.regret_matching_strategy(tree);
         // for (s, prob) in &strategy.probs {
@@ -135,8 +156,9 @@ impl CFR {
         //     println!("{:?}", game_tree.states[s.state]);
         // }
 
-        self.update_avg_strategy(&strategy);
+        self.update_avg_strategy(&tree, &strategy);
 
+        self.player_to_update = self.player_to_update.map(|p| p.opponent());
         return strategy;
     }
 
@@ -207,6 +229,7 @@ pub struct InfoState {
     pub goal: Outcome,
 }
 
+#[derive(Debug)]
 pub struct OutcomeValues {
     pub both_win: f64,
     pub p1_win: f64,
@@ -281,15 +304,26 @@ impl InfoStateRegrets {
         return InfoStateRegrets(result);
     }
 
-    pub fn discount(&mut self, discount: &CFRDiscounting, t: usize) {
-        for (_infostate, regrets) in self.0.iter_mut() {
-            for regret in regrets {
-                if *regret >= 0.0 {
-                    let exp = ((t + 1) as f64).powf(discount.alpha);
-                    *regret *= exp / (exp + 1.0);
-                } else {
-                    let exp = ((t + 1) as f64).powf(discount.beta);
-                    *regret *= exp / (exp + 1.0);
+    pub fn discount(
+        &mut self,
+        game_tree: &GameTree,
+        player: Option<Player>,
+        discount: &CFRDiscounting,
+        t: usize,
+    ) {
+        for (infostate, regrets) in self.0.iter_mut() {
+            if player
+                .map(|p| p == game_tree.current_player[&infostate.state])
+                .unwrap_or(true)
+            {
+                for regret in regrets {
+                    if *regret >= 0.0 {
+                        let exp = ((t + 1) as f64).powf(discount.alpha);
+                        *regret *= exp / (exp + 1.0);
+                    } else {
+                        let exp = ((t + 1) as f64).powf(discount.beta);
+                        *regret *= exp / (exp + 1.0);
+                    }
                 }
             }
         }
@@ -303,6 +337,19 @@ impl InfoStateRegrets {
                 .or_insert_with(|| vec![0.0; regrets.len()]);
             for i in 0..entry.len() {
                 entry[i] += regrets[i];
+            }
+        }
+    }
+
+    pub fn for_player(&mut self, tree: &GameTree, player: Option<Player>) {
+        for (infostate, regrets) in &mut self.0 {
+            if player
+                .map(|p| p != tree.current_player[&infostate.state])
+                .unwrap_or(false)
+            {
+                for r in regrets {
+                    *r = 0.0;
+                }
             }
         }
     }
@@ -549,8 +596,8 @@ impl BestResponse {
                         p1goal,
                         p2goal,
                     };
-                    let mut active_player_value = 0.0;
-                    let mut passive_player_value = 0.0;
+                    let active_player_value;
+                    let passive_player_value;
 
                     let (active_unnormalized_values, passive_unnormalized_values) = match state
                         .current_player()
@@ -715,6 +762,7 @@ pub struct GameTree {
     pub parents: HashMap<StateId, StateId>,
     pub children: HashMap<StateId, Vec<StateId>>,
     pub terminals: HashMap<StateId, Outcome>,
+    pub current_player: HashMap<StateId, Player>,
 }
 
 impl GameTree {
@@ -755,6 +803,11 @@ impl GameTree {
                 }
             }
         }
+        let current_player = all_states
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.current_player()))
+            .collect();
 
         return GameTree {
             states: all_states,
@@ -762,6 +815,7 @@ impl GameTree {
             parents,
             children,
             terminals,
+            current_player,
         };
     }
 }

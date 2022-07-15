@@ -39,6 +39,9 @@ struct Cli {
     discount_beta: f64,
     #[clap(long, default_value_t = 2.0)]
     discount_gamma: f64,
+
+    #[clap(long, action = ArgAction::Set,  default_value_t = false)]
+    alternate_updates: bool,
 }
 
 fn main() {
@@ -67,7 +70,7 @@ fn main() {
     } else {
         None
     };
-    let mut cfr = CFR::new(discounting);
+    let mut cfr = CFR::new(discounting, args.alternate_updates);
     let mut strategy = uniform.clone();
     for i in 0..args.iterations {
         println!("Computing CFR iteration {}...", i);
@@ -94,8 +97,11 @@ fn main() {
         }
         strategy = new_strategy;
 
-        outcome_values.first_move_epsilon *= 1.0-args.small_move_epsilon_decay;
-        println!("Small move regularization epsilon is {}", outcome_values.first_move_epsilon);
+        outcome_values.first_move_epsilon *= 1.0 - args.small_move_epsilon_decay;
+        println!(
+            "Small move regularization epsilon is {}",
+            outcome_values.first_move_epsilon
+        );
     }
     println!("Finished solving!");
     // for (s, prob) in &cfr.average_strategy.probs {
