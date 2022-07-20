@@ -6,7 +6,7 @@ This is a solver for the "Imperfect Information Tic Tac Toe" game which uses [Co
 
 ### Results
  - Each round of the game is advantaged to whoever goes second.  With optimal play, they can guarantee scoring a point 1/9 of the time more than their opponent.
- - Because of this, the game to 5 is also advantaged to whoever goes second. They will win on average %51 of the time with perfect play.
+ - Because of this, the game to 5 is also advantaged to whoever goes second. They will win on average 51.1% of the time with perfect play.
  - There is no pure strategy nash equilibrium.  In other words, you have to randomize your moves to do well at the game.
  - In the equilibrium found by this solver, the advantage for the second player comes from the case where the first player is trying to tie, and the second player is trying to win or lose. (There may be other strategies to achieve the same advantage).
 
