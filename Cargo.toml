@@ -31,8 +31,12 @@ path = "src/solve_multiround.rs"
 
 
 [[bin]]
-name = "best_response"
+name = "best_response_subgame"
 path = "src/best_response.rs"
+
+[[bin]]
+name = "best_response_multiround"
+path = "src/best_response_multiround.rs"
 
 [[bin]]
 name = "explore"

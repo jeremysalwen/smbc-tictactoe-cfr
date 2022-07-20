@@ -48,40 +48,6 @@ struct Cli {
     alternate_updates: bool,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
-struct Subgame {
-    p1score: i8,
-    p2score: i8,
-}
-
-fn exploitability_bound(game_tree: &GameTree, cfr: &CFR, outcome_values: &OutcomeValues) -> f64 {
-    let counterfactual_probs = cfr.average_strategy.counterfactual_probs(&game_tree);
-    let best_response = BestResponse::new(
-        &cfr.average_strategy,
-        &game_tree,
-        &counterfactual_probs,
-        &outcome_values,
-    );
-    let p1_exploiter = Strategy::splice(&cfr.average_strategy, &best_response.strategy, &game_tree);
-    let p2_exploiter = Strategy::splice(&best_response.strategy, &cfr.average_strategy, &game_tree);
-    let mut returns = Vec::new();
-    for spliced_strat in [p1_exploiter, p2_exploiter] {
-        let expected_values = spliced_strat.expected_values(&game_tree, &outcome_values);
-        let mut avg_return = 0f64;
-        for p1goal in Outcome::iter() {
-            for p2goal in Outcome::iter() {
-                avg_return += expected_values[&MetaState {
-                    state: 0,
-                    p1goal,
-                    p2goal,
-                }];
-            }
-        }
-        returns.push(avg_return / 9.0);
-    }
-    return f64::abs(returns[1] - returns[0]);
-}
-
 fn main() {
     let mut args = Cli::parse();
     std::fs::create_dir_all(&args.output_dir).unwrap();
@@ -163,8 +129,11 @@ fn main() {
                     *strategy = new_strategy;
 
                     if i % args.check_exploitability_every == args.check_exploitability_every - 1 {
-                        let exploitability =
-                            exploitability_bound(&game_tree, &solution, &outcome_values);
+                        let exploitability = exploitability_bound(
+                            &game_tree,
+                            &solution.average_strategy,
+                            &outcome_values,
+                        );
                         println!("Exploitability is {}", exploitability);
 
                         if exploitability > args.maximum_subgame_exploitability {

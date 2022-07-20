@@ -568,6 +568,36 @@ impl Strategy {
         }
         return max;
     }
+
+    pub fn visit_probs(&self, tree: &GameTree) -> HashMap<MetaState, f64> {
+        let mut result = HashMap::<MetaState, f64>::new();
+        for (id, state) in tree.states.iter().enumerate() {
+            for p1goal in Outcome::iter() {
+                for p2goal in Outcome::iter() {
+                    let metastate = MetaState {
+                        state: id,
+                        p1goal,
+                        p2goal,
+                    };
+                    let info_state = metastate.info_state(tree);
+                    let prob = *result.entry(metastate).or_insert(1.0 / 9.0);
+                    for (child_prob, child) in
+                        itertools::zip(self.probs[&info_state].iter(), tree.children[&id].iter())
+                    {
+                        result.insert(
+                            MetaState {
+                                state: *child,
+                                p1goal,
+                                p2goal,
+                            },
+                            prob * child_prob,
+                        );
+                    }
+                }
+            }
+        }
+        return result;
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1034,4 +1064,42 @@ impl State {
         }
         return (p1sum, p2sum);
     }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub struct Subgame {
+    pub p1score: i8,
+    pub p2score: i8,
+}
+
+pub fn exploitability_bound(
+    game_tree: &GameTree,
+    strategy: &Strategy,
+    outcome_values: &OutcomeValues,
+) -> f64 {
+    let counterfactual_probs = strategy.counterfactual_probs(&game_tree);
+    let best_response = BestResponse::new(
+        &strategy,
+        &game_tree,
+        &counterfactual_probs,
+        &outcome_values,
+    );
+    let p1_exploiter = Strategy::splice(&strategy, &best_response.strategy, &game_tree);
+    let p2_exploiter = Strategy::splice(&best_response.strategy, &strategy, &game_tree);
+    let mut returns = Vec::new();
+    for spliced_strat in [p1_exploiter, p2_exploiter] {
+        let expected_values = spliced_strat.expected_values(&game_tree, &outcome_values);
+        let mut avg_return = 0f64;
+        for p1goal in Outcome::iter() {
+            for p2goal in Outcome::iter() {
+                avg_return += expected_values[&MetaState {
+                    state: 0,
+                    p1goal,
+                    p2goal,
+                }];
+            }
+        }
+        returns.push(avg_return / 9.0);
+    }
+    return f64::abs(returns[1] - returns[0]);
 }

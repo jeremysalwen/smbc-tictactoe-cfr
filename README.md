@@ -5,7 +5,7 @@ For context, see the [SMBC comic](https://www.smbc-comics.com/comic/incomplete) 
 This is a solver for the "Imperfect Information Tic Tac Toe" game which uses [Counterfactual Regret Minimization](http://modelai.gettysburg.edu/2013/cfr/cfr.pdf) to compute an unexploitable strategy (i.e. a [Nash Equilibrium](https://en.wikipedia.org/wiki/Nash_equilibrium)).
 
 ### Results
- - Each round of the game is advantaged to whoever goes second.  With optimal play, they can guarantee achieving their goal 1/9 of the time more than their opponent.
+ - Each round of the game is advantaged to whoever goes second.  With optimal play, they can guarantee scoring a point 1/9 of the time more than their opponent.
  - Because of this, the game to 5 is also advantaged to whoever goes second. They will win on average %51 of the time with perfect play.
  - There is no pure strategy nash equilibrium.  In other words, you have to randomize your moves to do well at the game.
  - In the equilibrium found by this solver, the advantage for the second player comes from the case where the first player is trying to tie, and the second player is trying to win or lose. (There may be other strategies to achieve the same advantage).
@@ -19,7 +19,7 @@ If you want to experience pure frustration, you can play games against the pretr
 
 To do so, run 
 ```
-$ cargo run --release --bin play_multiround -- -s solution_1e6/
+$ cargo run --release --bin play_multiround -- -s solution_1e4/
 ```
 
 ### How to examine the bot's strategy
@@ -29,7 +29,7 @@ You can also see what the bot would do in any given situation, and see debug dia
 To examine what the bot thinks when the score is 4-4 for example, run 
 
 ```
-$ cargo run --release --bin explore -- -s solution_1e6/subgame_4_4
+$ cargo run --release --bin explore -- -s solution_1e4/subgame_4_4
 ```
 
 This will open an interactive prompt that displays information about a certain state of the game.
@@ -99,12 +99,27 @@ The solver goes through each round, from last to first, and attempts to solve it
 
 There are a number of parameters you can modify to adjust the training process
 
- - `--maximum-subgame-exploitability` is a small floating point value greater than 0.  Each subgame (round) will be solved within this degree of exploitability.  e.g. if this argument is `0.01`, the solver will solve until it is impossible to get a 1% "edge" against the the computed strategy.  Larger values will be faster to solve, but give less optimal solutions. By default this is `0.000001`.  (Note that I don't have a proof that my mechanism for solving will bound the overall exploitability of the game to 5, but I think it does).
+ - `--maximum-subgame-exploitability` is a small floating point value greater than 0.  Each subgame (round) will be solved within this degree of exploitability.  e.g. if this argument is `0.01`, the solver will solve until it is impossible to get a 1% "edge" against the the computed strategy.  Larger values will be faster to solve, but give less optimal solutions. By default this is `0.000001`.  (Note that I don't have a proof that my mechanism for solving will bound the overall exploitability of the game to 5, but in practice it does).
  - `--check-exploitability-every` Tells the solver how often to check whether a subgame has converged.  It takes time to check if a subgame has converged, so by default we only do it every `10` iterations.
  - `--winning-score` is the number of points the game is played to.  By default `5` like in the SMBC comic.
  - `--discount true` enables discounting as in the [Discounted CFR paper](https://arxiv.org/abs/1809.04040). This is enabled by default.  `--discount-alpha`, `--discount-beta` and `--discount-gamma` may also be tweaked from their default values which are copied from the paper.  Disabling `--discount` will cause the solver to use vanilla CFR, which is slower.
  - `--small-move-epsilon` and `--small-move-epsilon-decay` are options I was experimenting with to attempt to regularize the strategy that the solver learns.  For example, if move 1 and move two have the same expected value, I would rather learn a strategy that picks move 1 100% of the time, rather than move 1 some of the time and move 2 some of the time, since the resulting strategy is simpler to understand.  The "small-move-epsilon" is a bonus added to the score that rewards the players for playing "smaller" moves, i.e. moves which are closer to the upper left hand corner.  `--small-move-epsilon-decay` is used to modify reward after each iteration, e.g. if `small-move-epsilon-decay`is 0.01, then after each iteration `small-move-epsilon` will be reduced to be 0.99 times its value the previous iteration.  In my experiments these options did help with regularization, but nowhere near enough to arrive at an analytical solution.
  - `--alternate-updates true` enables "alternating updates" in the CFR algorithm.  This is how CFR+ and Discounted CFR both work, as these papers report that alternating updates result in faster convergence.   This is enabled by default.
+
+ ### How to validate your trained bot
+
+Included in this repository are utilities to calculate the best response to a given strategy.  This allows us to calculate the exploitability of our strategy, i.e. how well a perfect player can do against our trained bot.
+
+To evaluate how exploitable the included full multi-round solution is, run
+
+```
+$ cargo run --release --bin best_response_multiround -- -s solution_1e4/
+```
+
+This will compute the overall exploitability of the game.  Note that when solving we bound the exploitability of the subgames, but the overall exploitability may be higher than the exploitability of any subgame.
+
+There is also a tool (`best_response_subgame`) for computing the exploitability of a single round, ignoring the multi-round nature of the game.
+
 
  ### How it Works
 
@@ -124,7 +139,9 @@ By working backwards from (4,4), we can solve each subgame based on its "twin" w
 - Directly solving the full game to 5 with CFR by explicitly adding the player scores to the game state would work, but it would result in a much larger set of game states.  It would also require more careful handling of "chance" nodes in the game tree, since if we naively expanded each possible of assignments of goals after each round, it would blow up the number of game states to an unmanageable level (probably monte carlo CFR would be necessary).
 - I am not sure how to bound the overall exploitability of the agent based on the exploitability of the subgames. It seems likely there is some way to do it in the literature that I haven't found.
 - I attempted to use regularization to find a strategy that could be rounded to an analytical solution, but was unable to do so, thus disqualifying me from the 4 trillion nanacoin reward specified in the SMBC votey.
-- The included solution was solved to an exploitability of < 0.000001 per subgame, and took me several days of computation.
+- The included solution was solved to an exploitability of < 0.0001 per subgame, and took me a weekend of computation.  The total exploitability is 0.00058, i.e. with perfect play you will beat the bot 51.11% of the time as player 2, and the bot would only beat you 51.08% of the time as player 2.
+- This code is not as optimized as it could be, if you want to solve the game to lower exploitability, it would likely be worth your time to improve the performance.
+- Don't judge my ugly code.
 - Notice me Zach Weinersmith!
 
 ### References
